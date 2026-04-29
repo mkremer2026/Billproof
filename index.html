@@ -1571,7 +1571,7 @@
       <p>The gold button in the bottom-right corner of every tab opens a coaching chat with me - in my voice, drawing from my full body of frameworks. Use it for anything <em>around</em> billing that the generator tabs don't cover:</p>
       <ul>
         <li>Mindset and resistance: <em>"I'm in a backslide"</em>, <em>"I keep underbilling and I don't know why"</em>, <em>"I'm dreading billing today"</em></li>
-        <li>Tactical questions: <em>"is this billable?"</em>, <em>"how do I push back when a partner cuts my time?"</em>, <em>"a carrier guideline says X — what does that mean for me?"</em></li>
+        <li>Tactical questions: <em>"is this billable?"</em>, <em>"I don't have time to bill contemporaneously"</em>, <em>"a carrier guideline says X — what does that mean for me?"</em></li>
         <li>Stuck moments: <em>"I have 4 hours of unrecorded time and don't know where to start"</em></li>
       </ul>
       <p>The coach remembers your last 2-3 questions in the same session for follow-ups, but forgets when you close the panel. Nothing is stored on a server.</p>
@@ -1659,7 +1659,7 @@
   <header class="bnc-coach-header">
     <div class="bnc-coach-header-mark">The Billing Coach</div>
     <h2>Ask <em>The Billing Coach</em></h2>
-    <p>Mindset, resistance, "is this billable?", how to push back when partners cut your time — drop it in the box. You'll get a coaching response in Molly's voice.</p>
+    <p>Mindset, resistance, "is this billable?", "I don't have time to bill contemporaneously" — drop it in the box. You'll get a coaching response in The Billing Coach's voice.</p>
     <button class="bnc-coach-close" data-coach-close aria-label="Close">×</button>
   </header>
 
@@ -1669,7 +1669,7 @@
       Drop a question in the box below. Or try one of these:
       <ul>
         <li data-coach-suggest="I'm in a billing backslide and I have 6 hours of unrecorded time from this week. Where do I even start?">I'm in a backslide. Where do I start?</li>
-        <li data-coach-suggest="A partner just cut 2 hours off my time on a motion. How do I respond, and how do I keep my confidence up?">A partner cut my time on a motion.</li>
+        <li data-coach-suggest="I keep telling myself I don't have time to bill contemporaneously. I want to bill in the moment but I just can't seem to get there. What do I do?">"I don't have time to bill contemporaneously."</li>
         <li data-coach-suggest="I keep underbilling because I think the work shouldn't have taken me as long as it did. How do I stop?">Why do I keep underbilling?</li>
         <li data-coach-suggest="Is reviewing my own internal correspondence with co-counsel billable? I never know what counts.">Is this even billable?</li>
         <li data-coach-suggest="I have a client meeting on a complicated case in 30 minutes. I won't have time after to bill. What do I do?">No time after my next meeting.</li>
@@ -2938,7 +2938,7 @@ Return your response as JSON only, no preamble or code fences:
     { title: 'Welcome to your <em>ATVR</em> Generator.', body: '<p>This is the tool that turns a messy task blurb into a polished, value-packed billing narrative in seconds - using my proprietary ATVR framework.</p><p>Let me show you how it works in 30 seconds.</p>' },
     { title: '<em>Three</em> ways to generate.', body: '<p>The first three tabs are your generators:</p><ul style="list-style:none; padding:0; margin:0.5rem 0; font-size:0.92rem;"><li style="padding:0.4rem 0;"><strong>i. Standard Narrative</strong> — one task, multiple tasks, or paste a whole day/week/month at once.</li><li style="padding:0.4rem 0;"><strong>ii. Billing Bookends</strong> — capture the prep, the event, AND the follow-up.</li><li style="padding:0.4rem 0;"><strong>iii. Break It Up</strong> — defeat block billing on big projects.</li></ul>' },
     { title: 'The <em>Vault</em>.', body: '<p>The fourth tab - <strong>Guidelines Vault</strong> - is your private storage for carrier guidelines (Allstate, Chubb, Liberty Mutual…) and client-specific rules.</p><p>Save once. Apply with a click on any tab. <em>Stays on your device only.</em> Nothing on my server.</p>' },
-    { title: 'Need a coach in the moment?', body: '<p>See that <em>gold button in the bottom-right corner</em>? That\'s <strong>Ask The Billing Coach</strong> - me, in chat form, available on every tab.</p><p>Drop in any question - mindset, "is this billable?", how to push back when a partner cuts your time. The coach has my full body of frameworks behind it. Short memory across follow-ups, then forgets when you close the panel.</p>' },
+    { title: 'Need a coach in the moment?', body: '<p>See that <em>gold button in the bottom-right corner</em>? That\'s <strong>Ask The Billing Coach</strong> - me, in chat form, available on every tab.</p><p>Drop in any billing question - mindset, "is this billable?", whatever\'s on your mind. The coach has my full body of frameworks behind it. Short memory across follow-ups, then forgets when you close the panel.</p>' },
     { title: 'You\'re ready. Go bill some time.', body: '<p>Pick a tab. Paste what you actually did. Hit generate.</p><p>If you ever need a refresher, click the <strong>? Help</strong> button at the top right.</p><p style="margin-top:1rem; font-family:\'Playfair Display\',serif; font-style:italic; color:var(--gold-dark, #a38527);">It\'s YOUR time. Make it count.</p><p style="font-family:\'Playfair Display\',serif; font-style:italic; color:var(--navy); font-size:0.85rem;">— Molly</p>' }
   ];
   let currentTourStep = 0;
@@ -3107,7 +3107,7 @@ When the user asks a follow-up that depends on something they said in a prior tu
           ${escapeHtml(question)}
         </div>
         <div class="bnc-coach-a">
-          <div class="bnc-coach-a-label">Molly</div>
+          <div class="bnc-coach-a-label">The Billing Coach</div>
           ${escapeHtml(answer)}
         </div>
       `;
@@ -3137,7 +3137,7 @@ When the user asks a follow-up that depends on something they said in a prior tu
         <div class="bnc-coach-q-label">You asked</div>
         ${escapeHtml(question)}
       </div>
-      <div class="bnc-coach-loading">Molly is thinking<span class="bnc-loading-dots"><span></span><span></span><span></span></span></div>
+      <div class="bnc-coach-loading">The Billing Coach is thinking<span class="bnc-loading-dots"><span></span><span></span><span></span></span></div>
     `;
     // Remove any prior error
     const errEl = coachBody.querySelector('.bnc-coach-error');
