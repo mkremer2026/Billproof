@@ -3202,25 +3202,31 @@ The breakdown's pieces must read naturally as fragments of the narrative itself.
 
   const CODES_SPEC = `TASK / ACTIVITY CODES - CRITICAL INSTRUCTIONS:
 
-There are two paths for code application depending on what guidelines (if any) are loaded:
+There are THREE situations for code application depending on what guidelines (if any) are loaded:
 
-PATH A: Client billing guidelines ARE loaded with a code system specified.
+PATH A: Client billing guidelines ARE loaded AND specify a code list (UTBMS L-codes, modified UTBMS, custom codes, anything explicitly listed in the guidelines).
 - Extract the code list directly from the guidelines.
 - Pick the MOST DEFENSIBLE code(s) for each narrative from THAT specific list.
 - Set codes_inferred: false.
-- Set codes_source to a short label naming the guidelines (e.g., "Allstate Litigation Guidelines", "Chubb Coverage Guidelines", "Client Custom Codes"). Use the user's saved Vault label if visible.
+- Set codes_source to a short label naming the guidelines (e.g., "Allstate Litigation Guidelines", "Chubb Coverage Guidelines"). Use the user's saved Vault label if visible.
 
-PATH B: NO client guidelines are loaded, OR the loaded guidelines do not specify codes.
+PATH B: Client billing guidelines ARE loaded but do NOT include a code list.
+- Many carrier guidelines (Allstate, Chubb, Liberty Mutual, etc.) describe billing rules without embedding a UTBMS code table. In that case, apply STANDARD UTBMS codes - this is the universally accepted default that almost all major US carriers expect.
+- Pick the most defensible standard UTBMS code(s) for the dominant action in each narrative.
+- Set codes_inferred: true.
+- Set codes_source to the guidelines name (so the user knows their guidelines were read and applied, even though codes weren't explicitly listed). Example: "Allstate Litigation Guidelines"
+
+PATH C: NO client guidelines are loaded at all.
 - Apply STANDARD UTBMS codes (L-series phase/task codes for litigation work, B/C/M/etc. for transactional, plus A-series activity codes A101-A111).
 - Pick the most defensible standard UTBMS code(s) for the dominant action in each narrative.
 - Set codes_inferred: true.
 - Set codes_source: null.
 
-Rules that apply to BOTH paths:
-1. NEVER invent codes outside a recognized system. If guidelines specify L100, L120, L210 only, do not return L150.
+Rules that apply to ALL paths:
+1. NEVER invent codes outside a recognized system. If guidelines specify L100, L120, L210 only (Path A), do not return L150.
 2. Pick the MOST DEFENSIBLE code for the work described. If multiple codes could apply, pick the one most directly aligned with the dominant action verb.
 3. If the work requires both a phase/task code AND an activity code, return both. If only one applies, return that one and set the other to null.
-4. For Path A, if the guidelines mention codes but the listed codes are incomplete or ambiguous for this work, return codes: null (better to omit than guess wrong from a partial list).
+4. For Path A only, if the guidelines list codes but the available codes are incomplete or ambiguous for this work, return codes: null (better to omit than guess wrong from a partial list).
 
 Code object shape for each narrative:
 "codes": { "phase_task": "L120", "activity": "A104", "phase_task_desc": "...", "activity_desc": "..." }
@@ -4092,17 +4098,29 @@ Return your response as JSON only, no preamble or code fences:
   }
 
   // Render the codes attribution line at the bottom of an output panel.
-  // Two visual styles depending on where the codes came from:
-  //   - codesSource present + isInferred=false  -> gold check, "Codes applied per X. Verify before billing."
-  //   - isInferred=true (no codesSource)        -> amber-tinted note, "Suggested standard UTBMS codes - applied as a default since no guidelines are loaded."
-  //   - neither                                  -> nothing rendered
+  // THREE visual styles depending on where the codes came from:
+  //   - Path A: codesSource present + isInferred=false  -> gold check, "Codes applied per X."
+  //   - Path B: codesSource present + isInferred=true   -> soft note, codes are UTBMS defaults BUT the user's guidelines were read
+  //   - Path C: codesSource null    + isInferred=true   -> amber-tinted note, no guidelines were loaded at all
+  //   - neither -> nothing rendered
   function renderCodesAttribution(codesSource, isInferred) {
-    if (isInferred && !codesSource) {
-      return `<div class="bnc-code-attribution inferred">Suggested standard UTBMS codes - <strong>applied as a default since no guidelines are loaded.</strong></div>`;
-    }
-    if (codesSource && typeof codesSource === 'string' && codesSource.trim()) {
+    const hasSource = codesSource && typeof codesSource === 'string' && codesSource.trim();
+
+    // Path A: guidelines provided the code list explicitly
+    if (hasSource && !isInferred) {
       return `<div class="bnc-code-attribution">Codes applied per <strong>${escapeHtml(codesSource.trim())}</strong>. Verify before billing.</div>`;
     }
+
+    // Path B: guidelines were loaded but didn't list codes; UTBMS used as standard default
+    if (hasSource && isInferred) {
+      return `<div class="bnc-code-attribution inferred">Standard UTBMS codes applied. <strong>${escapeHtml(codesSource.trim())}</strong> didn't include a specific code list, so the universal UTBMS default was used.</div>`;
+    }
+
+    // Path C: no guidelines loaded at all
+    if (isInferred && !hasSource) {
+      return `<div class="bnc-code-attribution inferred">Suggested standard UTBMS codes - <strong>applied as a default since no guidelines are loaded.</strong></div>`;
+    }
+
     return '';
   }
 
