@@ -10,7 +10,7 @@ const CONFIG = {
   model: 'claude-sonnet-4-6',
 
   // Max tokens in the response. 1500 is plenty for a narrative set.
-  maxTokens: 1500,
+  maxTokens: 16000,
 
   // Rate limit: max requests per IP per window
   rateLimitMax: 20,
