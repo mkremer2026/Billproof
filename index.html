@@ -410,8 +410,6 @@
   /* Task code chip - appears above narrative when guidelines specify codes */
   .bnc-code-chip-row {
     display: flex; align-items: center; gap: 0.5rem;
-    margin-bottom: 0.6rem; padding-bottom: 0.55rem;
-    border-bottom: 1px dashed var(--border);
     flex-wrap: wrap;
   }
   .bnc-code-chip {
@@ -438,6 +436,41 @@
   }
   .bnc-code-copy-mini:hover { background: var(--navy); color: var(--paper); border-color: var(--navy); }
   .bnc-code-copy-mini.copied { background: var(--gold); color: var(--navy-deep); border-color: var(--gold); }
+
+  /* Code description line - small italic line under the chip explaining what each code means */
+  .bnc-code-desc {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-style: italic;
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-top: 0.4rem;
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px dashed var(--border);
+    line-height: 1.45;
+  }
+  .bnc-code-desc-label {
+    font-family: 'Outfit', sans-serif;
+    font-style: normal;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--navy);
+    margin-right: 0.2rem;
+  }
+  .bnc-code-desc-sep {
+    color: var(--gold);
+    font-weight: 700;
+    margin: 0 0.25rem;
+    font-style: normal;
+  }
+  /* When there's no description (rare - custom code with no AI desc), keep the bottom border on the chip row itself */
+  .bnc-code-chip-row:not(:has(+ .bnc-code-desc)) {
+    margin-bottom: 0.6rem;
+    padding-bottom: 0.55rem;
+    border-bottom: 1px dashed var(--border);
+  }
   .bnc-code-attribution {
     font-family: 'Playfair Display', serif; font-style: italic;
     font-size: 0.78rem; color: var(--muted);
@@ -3195,10 +3228,14 @@ Rules that apply to BOTH paths:
 4. For Path A, if the guidelines mention codes but the listed codes are incomplete or ambiguous for this work, return codes: null (better to omit than guess wrong from a partial list).
 
 Code object shape for each narrative:
-"codes": { "phase_task": "L120", "activity": "A104" }    // both populated
-"codes": { "phase_task": "L120", "activity": null }      // only phase/task
-"codes": { "phase_task": null, "activity": "A104" }      // only activity
-"codes": null                                            // no codes apply (Path A only)
+"codes": { "phase_task": "L120", "activity": "A104", "phase_task_desc": "...", "activity_desc": "..." }
+"codes": { "phase_task": "L120", "activity": null, "phase_task_desc": "...", "activity_desc": null }
+"codes": { "phase_task": null, "activity": "A104", "phase_task_desc": null, "activity_desc": "..." }
+"codes": null    // no codes apply (Path A only when guidelines mention codes but lack a usable list)
+
+Description fields (phase_task_desc, activity_desc):
+- For STANDARD UTBMS codes (L100-L530, A101-A111, B100-B320), you may set these to null. The frontend has a built-in lookup table for standard UTBMS descriptions and will fill them in from there. Returning them is optional but allowed.
+- For CUSTOM codes from carrier guidelines (e.g., a carrier's modified UTBMS like "L990" for "Miscellaneous", or proprietary codes like "Phase 1A" / "T-100"), you MUST provide a short description for each code. Quote the description from the guidelines text VERBATIM where possible; if the guidelines don't describe the code, write a brief description (5-10 words) of what the code likely covers based on context.
 
 Required top-level fields:
 - "codes_source": string label or null (see paths above)
@@ -3303,7 +3340,7 @@ Return your response as JSON only, no preamble or code fences:
 {
   "narrative": "the 20-25 word narrative here",
   "breakdown": { "action": "...", "task": "...", "value": "...", "result": "..." },
-  "codes": { "phase_task": "...", "activity": "..." } or null,
+  "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "custom code description", "activity_desc": null or "custom code description" } or null,
   "codes_source": "name of guidelines that supplied the codes" or null,
   "codes_inferred": false (Path A) or true (Path B - default UTBMS),
   "compliance_note": "one short sentence on compliance status. If no guidelines, write 'No client guidelines provided.'",
@@ -3499,7 +3536,7 @@ Return your response as JSON only, no preamble or code fences:
       "task_index": 1,
       "narrative": "...",
       "breakdown": { "action": "...", "task": "...", "value": "...", "result": "..." },
-      "codes": { "phase_task": "...", "activity": "..." } or null,
+      "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "custom code description", "activity_desc": null or "custom code description" } or null,
       "compliance_note": "compliance status or 'OK'"
     }
   ],
@@ -3629,7 +3666,7 @@ Return your response as JSON only, no preamble or code fences:
       "original_blurb": "the original text from the paste, verbatim or near-verbatim",
       "narrative": "the polished 20-25 word ATVR narrative",
       "breakdown": { "action": "...", "task": "...", "value": "...", "result": "..." },
-      "codes": { "phase_task": "...", "activity": "..." } or null
+      "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "for custom codes only", "activity_desc": null or "for custom codes only" } or null
     }
   ],
   "codes_source": "name of guidelines that supplied codes" or null,
@@ -3756,9 +3793,9 @@ NOTE: Each of the three bookends (before, main, after) gets its OWN codes object
 
 Return your response as JSON only, no preamble or code fences:
 {
-  "before": { "narrative": "...", "breakdown": { "action": "...", "task": "...", "value": "...", "result": "..." }, "codes": { "phase_task": "...", "activity": "..." } or null },
-  "main":   { "narrative": "...", "breakdown": { "action": "...", "task": "...", "value": "...", "result": "..." }, "codes": { "phase_task": "...", "activity": "..." } or null },
-  "after":  { "narrative": "...", "breakdown": { "action": "...", "task": "...", "value": "...", "result": "..." }, "codes": { "phase_task": "...", "activity": "..." } or null },
+  "before": { "narrative": "...", "breakdown": { "action": "...", "task": "...", "value": "...", "result": "..." }, "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "for custom codes only", "activity_desc": null or "for custom codes only" } or null },
+  "main":   { "narrative": "...", "breakdown": { "action": "...", "task": "...", "value": "...", "result": "..." }, "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "for custom codes only", "activity_desc": null or "for custom codes only" } or null },
+  "after":  { "narrative": "...", "breakdown": { "action": "...", "task": "...", "value": "...", "result": "..." }, "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "for custom codes only", "activity_desc": null or "for custom codes only" } or null },
   "codes_source": "name of guidelines that supplied codes" or null,
   "codes_inferred": false (Path A) or true (Path B - default UTBMS),
   "compliance_note": "compliance status or 'No client guidelines provided.'",
@@ -3852,10 +3889,10 @@ NOTE: Each phase gets its OWN codes object - the phases describe different kinds
 
 Return your response as JSON only, no preamble or code fences:
 {
-  "phase1": { "narrative": "...", "phase_time": "1.5", "breakdown": {...}, "codes": { "phase_task": "...", "activity": "..." } or null },
-  "phase2": { "narrative": "...", "phase_time": "1.0", "breakdown": {...}, "codes": { "phase_task": "...", "activity": "..." } or null },
-  "phase3": { "narrative": "...", "phase_time": "4.5", "breakdown": {...}, "codes": { "phase_task": "...", "activity": "..." } or null },
-  "phase4": { "narrative": "...", "phase_time": "1.5", "breakdown": {...}, "codes": { "phase_task": "...", "activity": "..." } or null },
+  "phase1": { "narrative": "...", "phase_time": "1.5", "breakdown": {...}, "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "for custom codes only", "activity_desc": null or "for custom codes only" } or null },
+  "phase2": { "narrative": "...", "phase_time": "1.0", "breakdown": {...}, "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "for custom codes only", "activity_desc": null or "for custom codes only" } or null },
+  "phase3": { "narrative": "...", "phase_time": "4.5", "breakdown": {...}, "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "for custom codes only", "activity_desc": null or "for custom codes only" } or null },
+  "phase4": { "narrative": "...", "phase_time": "1.5", "breakdown": {...}, "codes": { "phase_task": "...", "activity": "...", "phase_task_desc": null or "for custom codes only", "activity_desc": null or "for custom codes only" } or null },
   "codes_source": "name of guidelines that supplied codes" or null,
   "codes_inferred": false (Path A) or true (Path B - default UTBMS),
   "total_time": "${time || ''}",
@@ -3922,6 +3959,99 @@ Return your response as JSON only, no preamble or code fences:
     return `<div class="bnc-atvr-breakdown">${parts.join('')}</div>`;
   }
 
+  // ============ STANDARD UTBMS CODE DESCRIPTIONS ============
+  // Used as the source of truth for standard UTBMS codes. For custom carrier codes,
+  // the AI provides descriptions in its JSON response (codes.phase_task_desc / codes.activity_desc).
+  // The lookup table always wins for standard codes; AI-provided descriptions only fill in
+  // for codes NOT in this table (i.e., custom codes from carrier guidelines).
+  const UTBMS_PHASE_TASK = {
+    // L100 Case Assessment, Development and Administration
+    'L100': 'Case Assessment, Development and Administration',
+    'L110': 'Fact Investigation/Development',
+    'L120': 'Analysis/Strategy',
+    'L130': 'Experts/Consultants',
+    'L140': 'Document/File Management',
+    'L150': 'Budgeting',
+    'L160': 'Settlement/Non-Binding ADR',
+    'L190': 'Other Case Assessment',
+    // L200 Pre-Trial Pleadings and Motions
+    'L200': 'Pre-Trial Pleadings and Motions',
+    'L210': 'Pleadings',
+    'L220': 'Preliminary Injunctions/Provisional Remedies',
+    'L230': 'Court Mandated Conferences',
+    'L240': 'Dispositive Motions',
+    'L250': 'Other Written Motions and Submissions',
+    'L260': 'Class Action Certification and Notice',
+    // L300 Discovery
+    'L300': 'Discovery',
+    'L310': 'Written Discovery',
+    'L320': 'Document Production',
+    'L330': 'Depositions',
+    'L340': 'Expert Discovery',
+    'L350': 'Discovery Motions',
+    'L390': 'Other Discovery',
+    // L400 Trial Preparation and Trial
+    'L400': 'Trial Preparation and Trial',
+    'L410': 'Fact Witnesses',
+    'L420': 'Expert Witnesses',
+    'L430': 'Written Motions and Submissions',
+    'L440': 'Other Trial Preparation and Support',
+    'L450': 'Trial and Hearing Attendance',
+    'L460': 'Post-Trial Motions and Submissions',
+    'L470': 'Enforcement',
+    // L500 Appeal
+    'L500': 'Appeal',
+    'L510': 'Appellate Motions and Submissions',
+    'L520': 'Appellate Briefs',
+    'L530': 'Oral Argument',
+    // Bankruptcy B-codes (most common subset)
+    'B100': 'Administration',
+    'B110': 'Case Administration',
+    'B120': 'Asset Analysis and Recovery',
+    'B130': 'Asset Disposition',
+    'B140': 'Relief from Stay/Adequate Protection',
+    'B150': 'Meetings of and Communications with Creditors',
+    'B160': 'Fee/Employment Applications',
+    'B170': 'Fee/Employment Objections',
+    'B180': 'Avoidance Action Analysis',
+    'B190': 'Other Contested Matters',
+    'B200': 'Operations',
+    'B210': 'Business Operations',
+    'B220': 'Employee Benefits/Pensions',
+    'B230': 'Financing/Cash Collections',
+    'B240': 'Tax Issues',
+    'B250': 'Real Estate',
+    'B260': 'Board of Directors Matters',
+    'B300': 'Claims and Plan',
+    'B310': 'Claims Administration and Objections',
+    'B320': 'Plan and Disclosure Statement'
+  };
+
+  const UTBMS_ACTIVITY = {
+    'A101': 'Plan and Prepare For',
+    'A102': 'Research',
+    'A103': 'Draft/Revise',
+    'A104': 'Review/Analyze',
+    'A105': 'Communicate (in firm)',
+    'A106': 'Communicate (with client)',
+    'A107': 'Communicate (other outside counsel)',
+    'A108': 'Communicate (other external)',
+    'A109': 'Appear For/Attend',
+    'A110': 'Manage Data/Files',
+    'A111': 'Other'
+  };
+
+  // Look up a code's description. Order: standard UTBMS table first, then AI-provided
+  // description fallback for custom carrier codes.
+  function lookupCodeDescription(code, aiDesc) {
+    if (!code) return null;
+    const trimmed = String(code).trim().toUpperCase();
+    if (UTBMS_PHASE_TASK[trimmed]) return UTBMS_PHASE_TASK[trimmed];
+    if (UTBMS_ACTIVITY[trimmed])   return UTBMS_ACTIVITY[trimmed];
+    if (aiDesc && typeof aiDesc === 'string' && aiDesc.trim()) return aiDesc.trim();
+    return null;
+  }
+
   // Format codes object into a display string (for chip text + copy)
   function formatCodes(codes) {
     if (!codes || typeof codes !== 'object') return null;
@@ -3932,10 +4062,28 @@ Return your response as JSON only, no preamble or code fences:
     return parts.join(' / ');
   }
 
+  // Build the description line that sits under the code chip.
+  // Format: "Phase: <description> · Activity: <description>" - only the parts that are present.
+  function renderCodeDescriptions(codes) {
+    if (!codes || typeof codes !== 'object') return '';
+    const parts = [];
+    if (codes.phase_task) {
+      const desc = lookupCodeDescription(codes.phase_task, codes.phase_task_desc);
+      if (desc) parts.push(`<span class="bnc-code-desc-label">Phase:</span> ${escapeHtml(desc)}`);
+    }
+    if (codes.activity) {
+      const desc = lookupCodeDescription(codes.activity, codes.activity_desc);
+      if (desc) parts.push(`<span class="bnc-code-desc-label">Activity:</span> ${escapeHtml(desc)}`);
+    }
+    if (parts.length === 0) return '';
+    return `<div class="bnc-code-desc">${parts.join(' <span class="bnc-code-desc-sep">·</span> ')}</div>`;
+  }
+
   // Render the code chip row above a narrative (returns empty string if no codes)
   function renderCodeChip(codes) {
     const formatted = formatCodes(codes);
     if (!formatted) return '';
+    const descRow = renderCodeDescriptions(codes);
     return `
       <div class="bnc-code-chip-row">
         <span class="bnc-code-chip">
@@ -3944,6 +4092,7 @@ Return your response as JSON only, no preamble or code fences:
         </span>
         <button class="bnc-code-copy-mini" data-copy-text="${escapeAttr(formatted)}">Copy Code</button>
       </div>
+      ${descRow}
     `;
   }
 
