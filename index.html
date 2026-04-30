@@ -502,13 +502,8 @@
     line-height: 1.5;
   }
   .bnc-code-attribution.inferred::before {
-    content: '⚠';
-    color: #D97706;
-    font-style: normal;
-    font-weight: 700;
-    font-size: 1rem;
-    flex-shrink: 0;
-    margin-top: 1px;
+    content: '';
+    display: none;
   }
   .bnc-code-attribution.inferred strong {
     color: #6F4E07;
@@ -4099,11 +4094,11 @@ Return your response as JSON only, no preamble or code fences:
   // Render the codes attribution line at the bottom of an output panel.
   // Two visual styles depending on where the codes came from:
   //   - codesSource present + isInferred=false  -> gold check, "Codes applied per X. Verify before billing."
-  //   - isInferred=true (no codesSource)        -> amber warning, "Suggested standard UTBMS codes. Verify against your client's guidelines before billing."
+  //   - isInferred=true (no codesSource)        -> amber-tinted note, "Suggested standard UTBMS codes - applied as a default since no guidelines are loaded."
   //   - neither                                  -> nothing rendered
   function renderCodesAttribution(codesSource, isInferred) {
     if (isInferred && !codesSource) {
-      return `<div class="bnc-code-attribution inferred">Suggested standard UTBMS codes. Your client's specific code list may differ - <strong>verify against their guidelines before billing.</strong></div>`;
+      return `<div class="bnc-code-attribution inferred">Suggested standard UTBMS codes - <strong>applied as a default since no guidelines are loaded.</strong></div>`;
     }
     if (codesSource && typeof codesSource === 'string' && codesSource.trim()) {
       return `<div class="bnc-code-attribution">Codes applied per <strong>${escapeHtml(codesSource.trim())}</strong>. Verify before billing.</div>`;
