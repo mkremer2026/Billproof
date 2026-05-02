@@ -1956,6 +1956,45 @@
 
   /* ============ MONTH-END STAGE 2: FILTER BAR + BULK ACTIONS + CLICKABLE PATTERNS ============ */
 
+  /* Per-matter mapping in Step 2: bulk-apply row + auto-suggested badge */
+  .bnc-me-bulk-apply {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 1rem 0 1.25rem;
+    padding: 0.85rem 1rem;
+    background: var(--ivory);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    flex-wrap: wrap;
+  }
+  .bnc-me-bulk-apply .bnc-me-filter-label {
+    margin-bottom: 0;
+  }
+  .bnc-me-mapping-suggested {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0.1rem 0.45rem;
+    background: var(--gold-soft);
+    color: var(--gold-dark, #a38527);
+    border: 1px solid rgba(203,161,53,0.3);
+    border-radius: 8px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    vertical-align: middle;
+  }
+  .bnc-me-mapping-entry-count {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-style: italic;
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin-left: 0.4rem;
+    font-weight: 400;
+  }
+
   /* Upgraded filter bar with multiple filter groups */
   .bnc-me-filter-bar {
     display: flex;
@@ -3318,13 +3357,21 @@
       <div class="bnc-pf-step" data-me-step="guidelines" style="display:none">
         <div class="bnc-pf-step-header">
           <span class="bnc-pf-step-num">Step 2</span>
-          <h3>Choose guidelines</h3>
+          <h3>Match matters to guidelines</h3>
         </div>
-        <p class="bnc-pf-step-help">Pick one set of guidelines to apply across all matters in this Pre-Check. For a fast monthly triage, this is usually your firm's standard outside counsel guidelines or the most common carrier framework you bill against.</p>
+        <p class="bnc-pf-step-help">Pre-Check each matter against its applicable client or carrier guidelines from your Vault. Auto-suggested matches appear where the matter name contains a recognizable carrier or client. You can change any suggestion, or leave matters on "(no specific guideline)" to review them with the general ATVR framework only.</p>
 
-        <select class="bnc-pf-mapping-select" data-me-guideline-select style="max-width: 500px;">
-          <option value="none">No specific guidelines (apply general ATVR + advocacy framework only)</option>
-        </select>
+        <div class="bnc-me-bulk-apply" data-me-bulk-apply>
+          <label class="bnc-me-filter-label" for="me-apply-all-select">Apply to all matters at once</label>
+          <select class="bnc-pf-mapping-select" id="me-apply-all-select" data-me-apply-all style="max-width: 380px;">
+            <option value="">- pick one -</option>
+            <option value="none">(no specific guideline)</option>
+          </select>
+          <button class="bnc-secondary-btn" data-me-apply-all-btn>Apply to all</button>
+          <button class="bnc-secondary-btn" data-me-restore-suggestions>Restore auto-suggestions</button>
+        </div>
+
+        <div class="bnc-me-mapping-list" data-me-mapping-list></div>
 
         <div style="display: flex; gap: 0.65rem; align-items: center; margin-top: 1.5rem; flex-wrap: wrap;">
           <button class="bnc-generate-btn" data-me-run-review>
@@ -5043,7 +5090,8 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
   // ============ MONTH-END NARRATIVE PRE-CHECK ============
   // Triage tool for whole-month reviews. Architecture:
   //   1. Upload PDF -> extract entries grouped by matter
-  //   2. User picks ONE guideline (or none) to apply to all matters
+  //   2. User maps each matter to a Vault guideline (or none). Auto-suggested matches
+  //      where matter name contains a Vault entry's label as a substring.
   //   3. Process matters in PARALLEL: each matter's entries become a chunk sent
   //      as a separate API call. Up to ME_PARALLELISM concurrent calls.
   //   4. Show live progress as each matter completes.
@@ -5057,7 +5105,8 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
   const monthEndState = {
     pdfFile: null,            // { name, size, base64 }
     extracted: null,          // { entries, matters_grouped, matter_names, page_count }
-    selectedGuidelineId: 'none', // Vault entry ID or 'none'
+    matterMapping: {},        // { [matterName]: vaultEntryId | 'none' }
+    autoSuggested: {},        // { [matterName]: vaultEntryId } - tracks which mappings came from auto-detect
     review: null              // merged review report
   };
 
@@ -5071,7 +5120,10 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
   const meFileSize = mePanel.querySelector('[data-me-file-size]');
   const meFileClear = mePanel.querySelector('[data-me-file-clear]');
   const meGuidelinesStep = mePanel.querySelector('[data-me-step="guidelines"]');
-  const meGuidelineSelect = mePanel.querySelector('[data-me-guideline-select]');
+  const meMappingList = mePanel.querySelector('[data-me-mapping-list]');
+  const meApplyAllSelect = mePanel.querySelector('[data-me-apply-all]');
+  const meApplyAllBtn = mePanel.querySelector('[data-me-apply-all-btn]');
+  const meRestoreSuggestionsBtn = mePanel.querySelector('[data-me-restore-suggestions]');
   const meRunBtn = mePanel.querySelector('[data-me-run-review]');
   const meCancelBtn = mePanel.querySelector('[data-me-cancel]');
   const meOutput = mePanel.querySelector('[data-output="monthend"]');
@@ -5084,12 +5136,14 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
   function meResetAll() {
     monthEndState.pdfFile = null;
     monthEndState.extracted = null;
-    monthEndState.selectedGuidelineId = 'none';
+    monthEndState.matterMapping = {};
+    monthEndState.autoSuggested = {};
     monthEndState.review = null;
     meUploadPrompt.style.display = '';
     meUploadLoaded.style.display = 'none';
     meUploadZone.classList.remove('has-file');
     meGuidelinesStep.style.display = 'none';
+    if (meMappingList) meMappingList.innerHTML = '';
     meOutput.innerHTML = '';
     mePdfInput.value = '';
   }
@@ -5291,20 +5345,156 @@ JSON FORMATTING (non-negotiable):
   }
 
   // === GUIDELINES STEP ===
+  // Auto-suggest a Vault entry for a given matter name. Strategy:
+  // for each Vault entry, check if its label appears as a substring in the matter
+  // name (case-insensitive). Returns the longest matching label's Vault entry id,
+  // or null if no match found.
+  // Example: matter "Smith v. Diaz - Allstate (24-AL-887)" + Vault entry "Allstate Guidelines"
+  // -> match (because "allstate" appears in both).
+  function meAutoSuggestGuideline(matterName, vaultItems) {
+    if (!matterName || !vaultItems || vaultItems.length === 0) return null;
+    const matterLower = matterName.toLowerCase();
+    let bestMatch = null;
+    let bestLength = 0;
+    vaultItems.forEach(item => {
+      if (!item.label) return;
+      // For matching purposes, strip common filler words from the label and try
+      // each significant token. Example: "Allstate Guidelines" -> ["allstate", "guidelines"]
+      // We match on the longest distinctive token.
+      const labelLower = item.label.toLowerCase();
+      // First try whole-label substring match
+      if (labelLower.length >= 4 && matterLower.includes(labelLower)) {
+        if (labelLower.length > bestLength) {
+          bestMatch = item.id;
+          bestLength = labelLower.length;
+        }
+        return;
+      }
+      // Otherwise try each word in the label as a candidate (skip generic ones)
+      const skipWords = new Set(['guidelines', 'guideline', 'rules', 'policy', 'policies', 'manual', 'reference', 'guide', 'and', 'the', 'of', 'for', 'a']);
+      const tokens = labelLower.split(/[\s\-_().,]+/).filter(t => t.length >= 4 && !skipWords.has(t));
+      tokens.forEach(token => {
+        if (matterLower.includes(token) && token.length > bestLength) {
+          bestMatch = item.id;
+          bestLength = token.length;
+        }
+      });
+    });
+    return bestMatch;
+  }
+
   function meRenderGuidelinesStep() {
     const lib = loadLibrary();
-    // Refresh dropdown options - one for each Vault entry plus "none"
-    const opts = [`<option value="none">No specific guidelines (apply general ATVR + advocacy framework only)</option>`];
-    lib.items.forEach(item => {
-      opts.push(`<option value="${escapeAttr(item.id)}">${escapeHtml(item.label)}</option>`);
+    const matters = Object.keys(monthEndState.extracted.matters_grouped);
+
+    // Initialize matterMapping with auto-suggested matches for each matter
+    monthEndState.matterMapping = {};
+    monthEndState.autoSuggested = {};
+    matters.forEach(matter => {
+      const suggested = meAutoSuggestGuideline(matter, lib.items);
+      monthEndState.matterMapping[matter] = suggested || 'none';
+      if (suggested) monthEndState.autoSuggested[matter] = suggested;
     });
-    meGuidelineSelect.innerHTML = opts.join('');
+
+    // Populate the bulk-apply dropdown
+    if (meApplyAllSelect) {
+      const applyOpts = [`<option value="">- pick one -</option>`, `<option value="none">(no specific guideline)</option>`];
+      lib.items.forEach(item => {
+        applyOpts.push(`<option value="${escapeAttr(item.id)}">${escapeHtml(item.label)}</option>`);
+      });
+      meApplyAllSelect.innerHTML = applyOpts.join('');
+      meApplyAllSelect.value = '';
+    }
+
+    // Render the per-matter mapping list
+    meRenderMappingList();
     meGuidelinesStep.style.display = '';
   }
 
-  meGuidelineSelect.addEventListener('change', () => {
-    monthEndState.selectedGuidelineId = meGuidelineSelect.value;
-  });
+  // Render the matter mapping list - one row per matter with a guideline dropdown.
+  // Auto-suggested matches show a small "Auto-suggested" badge; the badge disappears
+  // if the user changes the dropdown to something else.
+  function meRenderMappingList() {
+    if (!meMappingList) return;
+    const lib = loadLibrary();
+    const matters = Object.keys(monthEndState.extracted.matters_grouped);
+    if (matters.length === 0) {
+      meMappingList.innerHTML = '<p style="font-style:italic;color:var(--muted);">No matters extracted - upload may have failed.</p>';
+      return;
+    }
+    meMappingList.innerHTML = matters.map(matter => {
+      const entryCount = monthEndState.extracted.matters_grouped[matter].length;
+      const currentMapping = monthEndState.matterMapping[matter] || 'none';
+      const wasAutoSuggested = monthEndState.autoSuggested[matter];
+      const stillAutoMatched = wasAutoSuggested && currentMapping === wasAutoSuggested;
+
+      const opts = [`<option value="none"${currentMapping === 'none' ? ' selected' : ''}>(no specific guideline)</option>`];
+      lib.items.forEach(item => {
+        const sel = currentMapping === item.id ? ' selected' : '';
+        opts.push(`<option value="${escapeAttr(item.id)}"${sel}>${escapeHtml(item.label)}</option>`);
+      });
+      return `
+        <div class="bnc-pf-mapping-row" data-me-mapping-matter="${escapeAttr(matter)}">
+          <div class="bnc-pf-mapping-matter">
+            ${escapeHtml(matter)}
+            <span class="bnc-me-mapping-entry-count">(${entryCount} ${entryCount === 1 ? 'entry' : 'entries'})</span>
+            ${stillAutoMatched ? '<span class="bnc-me-mapping-suggested">Auto-suggested</span>' : ''}
+          </div>
+          <span class="bnc-pf-mapping-arrow">→</span>
+          <select class="bnc-pf-mapping-select" data-me-mapping-select="${escapeAttr(matter)}">
+            ${opts.join('')}
+          </select>
+        </div>
+      `;
+    }).join('');
+
+    // Wire change handlers for each per-matter dropdown
+    meMappingList.querySelectorAll('[data-me-mapping-select]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const matter = sel.dataset.meMappingSelect;
+        monthEndState.matterMapping[matter] = sel.value;
+        // Re-render to update the "Auto-suggested" badge state
+        meRenderMappingList();
+      });
+    });
+  }
+
+  // "Apply to all" - sets every matter's mapping to the selected Vault entry (or none)
+  if (meApplyAllBtn) {
+    meApplyAllBtn.addEventListener('click', () => {
+      if (!meApplyAllSelect || !meApplyAllSelect.value) {
+        toastWarn('Pick a guideline (or "no specific guideline") first.');
+        return;
+      }
+      const value = meApplyAllSelect.value;
+      Object.keys(monthEndState.matterMapping).forEach(matter => {
+        monthEndState.matterMapping[matter] = value;
+      });
+      meRenderMappingList();
+      const lib = loadLibrary();
+      const item = lib.items.find(i => i.id === value);
+      const label = value === 'none' ? '(no specific guideline)' : (item ? item.label : value);
+      toastInfo(`Applied "${label}" to all ${Object.keys(monthEndState.matterMapping).length} matters.`);
+    });
+  }
+
+  // "Restore auto-suggestions" - resets every matter to its original auto-suggested
+  // mapping (or 'none' if it never had one). Useful if the user clicks Apply to All
+  // and then wants to revert.
+  if (meRestoreSuggestionsBtn) {
+    meRestoreSuggestionsBtn.addEventListener('click', () => {
+      const lib = loadLibrary();
+      const matters = Object.keys(monthEndState.extracted.matters_grouped);
+      monthEndState.autoSuggested = {};
+      matters.forEach(matter => {
+        const suggested = meAutoSuggestGuideline(matter, lib.items);
+        monthEndState.matterMapping[matter] = suggested || 'none';
+        if (suggested) monthEndState.autoSuggested[matter] = suggested;
+      });
+      meRenderMappingList();
+      toastInfo('Auto-suggestions restored.');
+    });
+  }
 
   if (meCancelBtn) {
     meCancelBtn.addEventListener('click', async () => {
@@ -5330,9 +5520,51 @@ JSON FORMATTING (non-negotiable):
     meRunBtn.textContent = 'Running Pre-Check...';
 
     const lib = loadLibrary();
-    const guidelineItem = monthEndState.selectedGuidelineId !== 'none'
-      ? lib.items.find(i => i.id === monthEndState.selectedGuidelineId)
-      : null;
+
+    // Build a per-matter guideline lookup. For each matter, resolve its mapped
+    // Vault entry to (a) a context string for the prompt, and (b) optional PDF data
+    // to attach to the multimodal message.
+    const matterGuidelineCtx = {}; // { [matterName]: { context: string, pdf: { name, data } | null } }
+    const matterMappingLabels = {}; // { [matterName]: vault label or 'none' } for progress UI
+    Object.keys(monthEndState.extracted.matters_grouped).forEach(matter => {
+      const vaultId = monthEndState.matterMapping[matter] || 'none';
+      if (vaultId === 'none') {
+        matterGuidelineCtx[matter] = {
+          context: '(No specific guidelines for this matter. Apply general ATVR + Billing Coach advocacy framework only.)',
+          pdf: null
+        };
+        matterMappingLabels[matter] = 'none';
+        return;
+      }
+      const item = lib.items.find(i => i.id === vaultId);
+      if (!item) {
+        matterGuidelineCtx[matter] = {
+          context: '(No specific guidelines for this matter. Apply general ATVR + Billing Coach advocacy framework only.)',
+          pdf: null
+        };
+        matterMappingLabels[matter] = 'none';
+        return;
+      }
+      matterMappingLabels[matter] = item.label;
+      const hasText = item.content && item.content.trim().length > 0;
+      const hasPdf = item.pdf && item.pdf.data;
+      if (hasText) {
+        matterGuidelineCtx[matter] = {
+          context: `Guidelines for this matter: ${item.label}\n${item.content}`,
+          pdf: null
+        };
+      } else if (hasPdf) {
+        matterGuidelineCtx[matter] = {
+          context: `Guidelines for this matter: ${item.label}\n(See attached PDF: "${item.pdf.name}" - the AI will read this PDF directly to determine compliance.)`,
+          pdf: { name: item.pdf.name, data: item.pdf.data }
+        };
+      } else {
+        matterGuidelineCtx[matter] = {
+          context: `Guidelines for this matter: ${item.label}\n(No content stored for this guideline.)`,
+          pdf: null
+        };
+      }
+    });
 
     // Build chunks: one per matter, sub-chunk if a matter has too many entries
     const chunks = [];
@@ -5353,7 +5585,7 @@ JSON FORMATTING (non-negotiable):
       }
     });
 
-    // Render progress board
+    // Render progress board with each chunk showing its guideline label
     meOutput.innerHTML = `
       <div class="bnc-me-progress">
         <div class="bnc-me-progress-header">
@@ -5366,13 +5598,17 @@ JSON FORMATTING (non-negotiable):
           <div class="bnc-me-progress-fill" data-me-prog-fill></div>
         </div>
         <div class="bnc-me-progress-list" data-me-prog-list>
-          ${chunks.map((c, i) => `
-            <div class="bnc-me-progress-item" data-me-prog-item="${i}">
-              <span class="bnc-me-progress-item-status"></span>
-              <span class="bnc-me-progress-item-name">${escapeHtml(c.matter)}${c.partIdx ? ` (part ${c.partIdx}/${c.totalParts})` : ''}</span>
-              <span class="bnc-me-progress-item-count">${c.entries.length}</span>
-            </div>
-          `).join('')}
+          ${chunks.map((c, i) => {
+            const gLabel = matterMappingLabels[c.matter];
+            const guidelineNote = gLabel === 'none' ? 'no specific guideline' : gLabel;
+            return `
+              <div class="bnc-me-progress-item" data-me-prog-item="${i}">
+                <span class="bnc-me-progress-item-status"></span>
+                <span class="bnc-me-progress-item-name">${escapeHtml(c.matter)}${c.partIdx ? ` (part ${c.partIdx}/${c.totalParts})` : ''}</span>
+                <span class="bnc-me-progress-item-count" title="Applying ${escapeAttr(guidelineNote)}">${c.entries.length}</span>
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
     `;
@@ -5380,26 +5616,6 @@ JSON FORMATTING (non-negotiable):
       const progEl = meOutput.querySelector('.bnc-me-progress');
       if (progEl) progEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
-
-    // Build guideline context. If the selected guideline has a PDF attached
-    // (no extracted text), we'll pass the PDF document with each chunk and
-    // reference it by name in the prompt.
-    let guidelineContext;
-    let guidelinePdf = null;
-    if (guidelineItem) {
-      const hasText = guidelineItem.content && guidelineItem.content.trim().length > 0;
-      const hasPdf = guidelineItem.pdf && guidelineItem.pdf.data;
-      if (hasText) {
-        guidelineContext = `Guidelines applied to all matters: ${guidelineItem.label}\n${guidelineItem.content}`;
-      } else if (hasPdf) {
-        guidelineContext = `Guidelines applied to all matters: ${guidelineItem.label}\n(See attached PDF: "${guidelineItem.pdf.name}" - the AI will read this PDF directly to determine compliance with carrier or client guidelines.)`;
-        guidelinePdf = { name: guidelineItem.pdf.name, data: guidelineItem.pdf.data };
-      } else {
-        guidelineContext = `Guidelines applied to all matters: ${guidelineItem.label}\n(No content stored for this guideline.)`;
-      }
-    } else {
-      guidelineContext = '(No specific guidelines loaded. Apply general ATVR + Billing Coach advocacy framework only.)';
-    }
 
     // Process chunks with bounded parallelism
     const allFindings = [];
@@ -5410,7 +5626,9 @@ JSON FORMATTING (non-negotiable):
       const itemEl = meOutput.querySelector(`[data-me-prog-item="${chunkIdx}"]`);
       if (itemEl) itemEl.classList.add('processing');
       try {
-        const findings = await meReviewChunk(chunk, guidelineContext, guidelinePdf);
+        // Look up THIS matter's guideline context + PDF
+        const ctx = matterGuidelineCtx[chunk.matter] || { context: '(No guidelines)', pdf: null };
+        const findings = await meReviewChunk(chunk, ctx.context, ctx.pdf);
         allFindings.push(...findings);
         if (itemEl) {
           itemEl.classList.remove('processing');
@@ -6567,37 +6785,51 @@ JSON FORMATTING (non-negotiable):
     }
     const sorted = [...lib.items].sort((a, b) => (b.lastUsedAt || b.createdAt || '').localeCompare(a.lastUsedAt || a.createdAt || ''));
     list.innerHTML = '<div class="bnc-library-list">' + sorted.map(item => {
-      const isPdf = item.pdf && item.pdf.data;
-      const isPdfFallback = isPdf && !item.content;
-      const preview = item.content
+      const hasPdf = item.pdf && item.pdf.data;
+      const hasText = item.content && item.content.trim().length > 0;
+
+      // Decide what to show in the preview area.
+      // Priority: extracted/typed text > PDF-only description.
+      const preview = hasText
         ? `${escapeHtml(item.content.slice(0, 280))}${item.content.length > 280 ? '…' : ''}`
-        : `<em style="color:var(--muted);">PDF guidelines stored as image-based document. Will be sent to the AI as an attached PDF when applied.</em>`;
-      const meta = isPdfFallback
-        ? `📄 ${escapeHtml(item.pdf.name || 'PDF')} · saved ${formatDate(item.createdAt)}`
-        : isPdf
-        ? `📄 ${escapeHtml(item.pdf.name || 'PDF')} · ${item.content.length} chars extracted · saved ${formatDate(item.createdAt)}`
-        : `${item.content.length} characters · saved ${formatDate(item.createdAt)}`;
+        : `<em style="color:var(--muted);">PDF guidelines · The AI reads this PDF directly when applied to a Pre-Check.</em>`;
+
+      // Meta line under the preview - file name + char count + dates
+      let meta;
+      if (hasPdf && hasText) {
+        meta = `📄 ${escapeHtml(item.pdf.name || 'PDF')} · ${item.content.length} chars · saved ${formatDate(item.createdAt)}`;
+      } else if (hasPdf) {
+        meta = `📄 ${escapeHtml(item.pdf.name || 'PDF')} · saved ${formatDate(item.createdAt)}`;
+      } else {
+        meta = `${item.content.length} characters · saved ${formatDate(item.createdAt)}`;
+      }
       const usedSuffix = item.lastUsedAt && item.lastUsedAt !== item.createdAt ? ' · last used ' + formatDate(item.lastUsedAt) : '';
-      const editBtnDisabled = isPdfFallback ? 'disabled style="opacity:0.4;cursor:not-allowed;" title="PDF-only entries cannot be edited as text"' : '';
-      // Full content for expanded view - for text entries and PDFs with extracted text.
-      // Image-only PDFs have no text to show, so the View button is hidden for those.
-      const fullContent = item.content || '';
-      const hasViewable = !isPdfFallback && fullContent.length > 0;
-      const viewBtn = hasViewable
-        ? `<button class="bnc-library-card-view-btn" data-view="${item.id}"><span data-view-label>View</span><span class="bnc-chev-mini"></span></button>`
-        : '';
-      // For collapsed state: show short preview (CSS clamps to 3 lines).
-      // For expanded state: CSS reveals full content. So render full content always.
-      const previewBody = hasViewable
-        ? escapeHtml(fullContent)
-        : preview; // PDF-only fallback: keep the original italic explanation
+
+      // Build the View button. Three cases:
+      // 1. Has both text + PDF: a "View" button that toggles expanded text view. Plus optionally a "Open PDF" button.
+      // 2. Has PDF only: an "Open PDF" button that opens the file in a new tab.
+      // 3. Has text only: a "View" button that toggles expanded text view.
+      let viewBtns = '';
+      if (hasText) {
+        viewBtns += `<button class="bnc-library-card-view-btn" data-view="${item.id}"><span data-view-label>View</span><span class="bnc-chev-mini"></span></button>`;
+      }
+      if (hasPdf) {
+        viewBtns += `<button class="bnc-library-card-btn" data-view-pdf="${item.id}" title="Open PDF in a new tab">Open PDF</button>`;
+      }
+
+      // Preview body: full content for text entries (CSS handles collapsed/expanded),
+      // or italic description for PDF-only entries.
+      const previewBody = hasText
+        ? escapeHtml(item.content)
+        : preview;
+
       return `
         <div class="bnc-library-card" data-card-id="${item.id}">
           <div class="bnc-library-card-head">
-            <div class="bnc-library-card-label">${escapeHtml(item.label)}${isPdf ? ' <span style="font-size:0.7rem;background:var(--gold-soft);color:var(--navy);padding:0.15rem 0.55rem;border-radius:10px;font-weight:500;letter-spacing:0.04em;border:1px solid rgba(203,161,53,0.3);margin-left:0.4rem;vertical-align:middle;">PDF</span>' : ''}</div>
+            <div class="bnc-library-card-label">${escapeHtml(item.label)}${hasPdf ? ' <span style="font-size:0.7rem;background:var(--gold-soft);color:var(--navy);padding:0.15rem 0.55rem;border-radius:10px;font-weight:500;letter-spacing:0.04em;border:1px solid rgba(203,161,53,0.3);margin-left:0.4rem;vertical-align:middle;">PDF</span>' : ''}</div>
             <div class="bnc-library-card-actions">
-              ${viewBtn}
-              <button class="bnc-library-card-btn" data-edit="${item.id}" ${editBtnDisabled}>Edit</button>
+              ${viewBtns}
+              <button class="bnc-library-card-btn" data-edit="${item.id}">Edit</button>
               <button class="bnc-library-card-btn danger" data-delete="${item.id}">Delete</button>
             </div>
           </div>
@@ -6606,7 +6838,12 @@ JSON FORMATTING (non-negotiable):
         </div>
       `;
     }).join('') + '</div>';
-    list.querySelectorAll('[data-edit]:not([disabled])').forEach(b => b.addEventListener('click', () => openModal({ mode: 'edit', id: b.dataset.edit })));
+
+    // Edit handler - works for all entries. The modal has special handling for PDF entries
+    // so that the user can rename / add notes without losing the attached PDF.
+    list.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => openModal({ mode: 'edit', id: b.dataset.edit })));
+
+    // View handler - text entries only. Toggles the expanded class so the full text shows.
     list.querySelectorAll('[data-view]').forEach(b => {
       b.addEventListener('click', () => {
         const card = b.closest('.bnc-library-card');
@@ -6614,6 +6851,33 @@ JSON FORMATTING (non-negotiable):
         const isExpanded = card.classList.toggle('expanded');
         const label = b.querySelector('[data-view-label]');
         if (label) label.textContent = isExpanded ? 'Hide' : 'View';
+      });
+    });
+
+    // Open PDF in new tab - PDF entries only. Build a blob URL on the fly so we don't
+    // pollute the URL bar with a multi-megabyte data URI.
+    list.querySelectorAll('[data-view-pdf]').forEach(b => {
+      b.addEventListener('click', () => {
+        const id = b.dataset.viewPdf;
+        const item = loadLibrary().items.find(i => i.id === id);
+        if (!item || !item.pdf || !item.pdf.data) {
+          toastError("Couldn't find the PDF for this entry.");
+          return;
+        }
+        try {
+          // Convert base64 to a binary blob, then create an object URL the browser can open
+          const byteString = atob(item.pdf.data);
+          const bytes = new Uint8Array(byteString.length);
+          for (let i = 0; i < byteString.length; i++) bytes[i] = byteString.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'application/pdf' });
+          const url = URL.createObjectURL(blob);
+          window.open(url, '_blank');
+          // Free the URL after a delay - the new tab keeps its own reference
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (err) {
+          console.error('PDF open error:', err);
+          toastError("Couldn't open this PDF in a new tab.");
+        }
       });
     });
     list.querySelectorAll('[data-delete]').forEach(b => {
@@ -6655,13 +6919,22 @@ JSON FORMATTING (non-negotiable):
     if (mode === 'edit') {
       const item = loadLibrary().items.find(i => i.id === id);
       if (!item) return;
-      modalTitle.textContent = 'Edit Guidelines';
+      const isPdfEntry = item.pdf && item.pdf.data;
+      modalTitle.textContent = isPdfEntry
+        ? `Edit: ${item.pdf.name || 'PDF Guidelines'}`
+        : 'Edit Guidelines';
       modalLabel.value = item.label;
-      modalContent.value = item.content;
+      modalContent.value = item.content || '';
+      if (isPdfEntry) {
+        modalContent.placeholder = "Optional: notes about these guidelines (the AI reads the PDF directly when running Pre-Checks - this notes field is just for your reference).";
+      } else {
+        modalContent.placeholder = "Paste the carrier or client guidelines text here...";
+      }
     } else {
       modalTitle.textContent = 'Add New Guidelines';
       modalLabel.value = '';
       modalContent.value = initialContent || '';
+      modalContent.placeholder = "Paste the carrier or client guidelines text here...";
     }
     modal.classList.add('visible');
     setTimeout(() => modalLabel.focus(), 100);
@@ -6688,8 +6961,14 @@ JSON FORMATTING (non-negotiable):
     if (!label) { toastWarn('Please enter a label for this guideline set.'); modalLabel.focus(); return; }
 
     // For PDF modes (image PDF fallback, or direct PDF), content is allowed empty
-    // because the AI reads the PDF directly at Pre-Check time
-    const isPdfWithoutText = pdfMode === 'create-pdf-fallback' || pdfMode === 'create-pdf-direct';
+    // because the AI reads the PDF directly at Pre-Check time.
+    // Same applies when editing an existing PDF entry - notes are optional.
+    let editingPdfEntry = false;
+    if (modalMode === 'edit' && modalEditId) {
+      const existing = loadLibrary().items.find(i => i.id === modalEditId);
+      if (existing && existing.pdf && existing.pdf.data) editingPdfEntry = true;
+    }
+    const isPdfWithoutText = pdfMode === 'create-pdf-fallback' || pdfMode === 'create-pdf-direct' || editingPdfEntry;
     if (!content && !isPdfWithoutText) {
       toastWarn('Please paste the guidelines content.');
       modalContent.focus();
