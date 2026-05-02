@@ -4407,17 +4407,15 @@
     // The overlay persists through base64 conversion AND extraction, with
     // rotating stages that update the user on what's happening.
     const overlay = showLoadingOverlay({
-      title: 'Reading your pro forma...',
+      title: 'Reading through your pro forma...',
       stages: [
-        'Reading the file from your computer...',
-        'Sending the document to the AI...',
-        'AI is reading the document and identifying time entries...',
-        'Identifying time entries and matters...',
-        'Extracting timekeepers and codes...',
-        'Grouping entries by matter...',
-        'Almost done - finalizing matter list...'
+        'Reading through your time entries...',
+        'Looking at your matters and timekeepers...',
+        'Pulling out task codes and hours...',
+        'Organizing everything by matter...',
+        'Almost there - finalizing your matter list...'
       ],
-      warning: 'Please don\'t refresh the page - the AI is reading your pro forma. Larger PDFs take 30-60 seconds.'
+      warning: 'Hang tight while I read through your pro forma. Larger PDFs take 30-60 seconds - please don\'t refresh the page.'
     });
     // Stash the overlay handle so pfExtractEntries can stop it when Step 2 appears
     proFormaState._activeOverlay = overlay;
@@ -4539,7 +4537,7 @@
   //   - opts.refreshWarning: optional override of the "please don't refresh" copy
   function startExtractionLoadingUI(container, opts) {
     const stages = opts.stages || ['Working on it...'];
-    const refreshCopy = opts.refreshWarning || 'Please don\'t refresh the page - the AI is reading your document. Larger PDFs take 30-60 seconds.';
+    const refreshCopy = opts.refreshWarning || 'Hang tight while I read through your document - this takes 30-60 seconds. Please don\'t refresh the page.';
     container.innerHTML = `
       <div class="bnc-pf-loading">
         <div class="bnc-pf-loading-spinner"></div>
@@ -4604,7 +4602,7 @@
 
   async function pfExtractEntries() {
     // Toast lets the user know what's happening even if they look away from the page
-    toastInfo('Reading your pro forma - this takes about 20-40 seconds.', 'Working on it');
+    toastInfo('Reading through your pro forma - this takes about 20-40 seconds.', 'Working on it');
 
     // The overlay was started in pfHandleFile and persists through extraction.
     // We DON'T render an in-flow loading panel here anymore - the overlay
@@ -4685,9 +4683,9 @@ If the PDF doesn't appear to be a pro forma at all, return:
         extractStageInterval.stop();
         console.warn('PF extract: initial parse failed, retrying. Error:', firstErr.message);
         proFormaState._activeOverlay = showLoadingOverlay({
-          title: 'Cleaning up the response and retrying...',
-          stages: ['Cleaning up the response and retrying...'],
-          warning: 'The first attempt to parse the AI response failed. Trying again with a stricter prompt.'
+          title: 'Let me try that again...',
+          stages: ['Cleaning up the response and giving it another pass...'],
+          warning: 'The first read came back a bit messy. Trying once more with a stricter prompt - this should clear up in a few seconds.'
         });
 
         const retryPrompt = extractPrompt + `\n\nIMPORTANT: Your previous response could not be parsed as JSON. Common mistakes to avoid:
@@ -4841,7 +4839,7 @@ If the PDF doesn't appear to be a pro forma at all, return:
             if (hasText) {
               contentForPrompt = item.content;
             } else if (hasPdf) {
-              contentForPrompt = `(See attached PDF: "${item.pdf.name}" - the AI will read this PDF directly)`;
+              contentForPrompt = `(See attached PDF: "${item.pdf.name}" - I'll read this PDF directly)`;
             } else {
               contentForPrompt = '(No content stored for this guideline)';
             }
@@ -5232,7 +5230,7 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
               `).join('')}
             </div>
             <div class="bnc-pf-unbundled-disclaimer">
-              Hours are estimates. Verify against your actual time before billing - the AI infers splits from the description, not from your records.
+              Hours are estimates. Verify against your actual time before billing - the tool infers splits from the description, not from your records.
             </div>
           </div>
         ` : ''}
@@ -5377,7 +5375,7 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
 
     html += `
         <div class="bnc-pf-disclaimer">
-          <strong>Reminder:</strong> The Pre-Check is an automated first-pass assistant, not a substitute for partner-level judgment. Final review and submission decisions remain with the timekeeper and reviewing partner. Suggested rewrites - including unbundled narratives for block-billing entries - are starting points, not authoritative billing language. Hours suggested for unbundled narratives are estimates the AI infers from the work description, not from your actual time records.
+          <strong>Reminder:</strong> The Pre-Check is an automated first-pass assistant, not a substitute for partner-level judgment. Final review and submission decisions remain with the timekeeper and reviewing partner. Suggested rewrites - including unbundled narratives for block-billing entries - are starting points, not authoritative billing language. Hours suggested for unbundled narratives are estimates the tool infers from the work description, not from your actual time records.
         </div>
       </div>
     `;
@@ -5602,7 +5600,7 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
     body += `
       <hr style="margin: 32px 0 16px;">
       <p style="font-style: italic; color: #666; font-size: 12px;">
-        <strong>Reminder:</strong> The Pre-Check is an automated first-pass assistant, not a substitute for partner-level judgment. Final review and submission decisions remain with the timekeeper and reviewing partner. Suggested rewrites - including unbundled narratives for block-billing entries - are starting points, not authoritative billing language. Hours suggested for unbundled narratives are estimates the AI infers from the work description, not from your actual time records.
+        <strong>Reminder:</strong> The Pre-Check is an automated first-pass assistant, not a substitute for partner-level judgment. Final review and submission decisions remain with the timekeeper and reviewing partner. Suggested rewrites - including unbundled narratives for block-billing entries - are starting points, not authoritative billing language. Hours suggested for unbundled narratives are estimates the tool infers from the work description, not from your actual time records.
       </p>
       <p style="font-size: 11px; color: #999; margin-top: 16px;">Generated by ATVR Narrative Generator · The Billing Coach · thebillingcoach.com</p>
     `;
@@ -5717,17 +5715,15 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
     // Show the GUARANTEED-VISIBLE fixed-position overlay spinner. Lives outside
     // the page flow so it always appears in the viewport center.
     const overlay = showLoadingOverlay({
-      title: 'Reading your monthly time export...',
+      title: 'Reading through your monthly time export...',
       stages: [
-        'Reading the file from your computer...',
-        'Sending the document to the AI...',
-        'AI is reading the document and identifying matters...',
-        'Identifying entries across all matters...',
-        'Grouping entries by matter (this is the slowest step for large months)...',
-        'Identifying timekeepers and codes...',
-        'Almost done - finalizing matter list...'
+        'Reading through your monthly time entries...',
+        'Looking at every matter you billed this month...',
+        'Identifying timekeepers and task codes...',
+        'Grouping entries by matter (the slowest step on big months)...',
+        'Almost there - finalizing your matter list...'
       ],
-      warning: 'Please don\'t refresh the page - the AI is reading your monthly export. Larger PDFs take 30-90 seconds.'
+      warning: 'Hang tight while I work through your monthly entries. Larger months take 30-90 seconds - please don\'t refresh the page.'
     });
     monthEndState._activeOverlay = overlay;
 
@@ -5753,7 +5749,7 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
   // Same shape as Pro Forma extraction but the prompt asks for matters_grouped
   // structure so we can dispatch chunks per-matter directly.
   async function meExtractEntries() {
-    toastInfo('Reading your monthly time export - this takes 30-60 seconds depending on size.', 'Working on it');
+    toastInfo('Reading through your monthly entries - this takes 30-60 seconds depending on size.', 'Working on it');
 
     // The overlay was started in meHandleFile and persists through extraction.
     const extractStageInterval = {
@@ -5817,9 +5813,9 @@ JSON FORMATTING (non-negotiable):
         extractStageInterval.stop();
         console.warn('ME extract: initial parse failed, retrying. Error:', firstErr.message);
         monthEndState._activeOverlay = showLoadingOverlay({
-          title: 'Cleaning up the response and retrying...',
-          stages: ['Cleaning up the response and retrying...'],
-          warning: 'The first attempt to parse the AI response failed. Trying again with a stricter prompt.'
+          title: 'Let me try that again...',
+          stages: ['Cleaning up the response and giving it another pass...'],
+          warning: 'The first read came back a bit messy. Trying once more with a stricter prompt - this should clear up in a few seconds.'
         });
 
         const retryPrompt = extractPrompt + `\n\nIMPORTANT: Your previous response could not be parsed as JSON. Common mistakes:\n- Do NOT include any text before { or after }\n- Do NOT use markdown fences\n- Use only straight ASCII quotes`;
@@ -6095,7 +6091,7 @@ JSON FORMATTING (non-negotiable):
         };
       } else if (hasPdf) {
         matterGuidelineCtx[matter] = {
-          context: `Guidelines for this matter: ${item.label}\n(See attached PDF: "${item.pdf.name}" - the AI will read this PDF directly to determine compliance.)`,
+          context: `Guidelines for this matter: ${item.label}\n(See attached PDF: "${item.pdf.name}" - I'll read this PDF directly to check compliance.)`,
           pdf: { name: item.pdf.name, data: item.pdf.data }
         };
       } else {
@@ -6792,7 +6788,7 @@ JSON FORMATTING (non-negotiable):
                   `).join('')}
                 </div>
                 <div class="bnc-pf-unbundled-disclaimer">
-                  Hours are estimates. Verify against your actual time before billing - the AI infers splits from the description, not from your records.
+                  Hours are estimates. Verify against your actual time before billing - the tool infers splits from the description, not from your records.
                 </div>
               </div>
             ` : ''}
@@ -7605,7 +7601,7 @@ JSON FORMATTING (non-negotiable):
       modalLabel.value = item.label;
       modalContent.value = item.content || '';
       if (isPdfEntry) {
-        modalContent.placeholder = "Optional: notes about these guidelines (the AI reads the PDF directly when running Pre-Checks - this notes field is just for your reference).";
+        modalContent.placeholder = "Optional: notes about these guidelines (I read the PDF directly when running Pre-Checks - this notes field is just for your reference).";
       } else {
         modalContent.placeholder = "Paste the carrier or client guidelines text here...";
       }
@@ -7842,7 +7838,7 @@ JSON FORMATTING (non-negotiable):
     if (mode === 'create-pdf-direct') {
       // The AI will read the PDF directly at Pre-Check time. Notes here are optional
       // for the user's own reference - they don't get sent to the AI.
-      modalContent.placeholder = "Optional: add your own notes about these guidelines (the AI will read the PDF directly when running Pre-Checks - this notes field is just for your reference).";
+      modalContent.placeholder = "Optional: add your own notes about these guidelines (I read the PDF directly when running Pre-Checks - this notes field is just for your reference).";
       modalContent.style.opacity = '1';
     } else if (mode === 'create-pdf-fallback') {
       modalContent.placeholder = "(Image-based PDF - no extractable text. The PDF itself will be saved and applied directly.)";
