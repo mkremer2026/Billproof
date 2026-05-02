@@ -1709,6 +1709,95 @@
     color: var(--navy);
   }
 
+  /* Fixed-position overlay spinner - GUARANTEED to appear in viewport center.
+     Used during PDF base64 conversion (Phase 0) before the in-flow loading
+     panel renders. Lives outside the normal page flow so it doesn't depend
+     on scrollIntoView or where the output container is. */
+  .bnc-loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(33, 28, 16, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: bncOverlayFade 0.2s ease-out;
+  }
+  @keyframes bncOverlayFade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .bnc-loading-overlay-card {
+    background: var(--paper);
+    border: 1.5px solid var(--gold);
+    border-radius: 12px;
+    padding: 2.25rem 2.5rem;
+    max-width: 440px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  }
+  .bnc-loading-overlay-spinner {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 1.1rem;
+    border: 4px solid var(--gold-soft);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: bncSpin 1s linear infinite;
+  }
+  .bnc-loading-overlay-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    color: var(--navy);
+    font-size: 1.35rem;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+  }
+  .bnc-loading-overlay-stage {
+    color: var(--muted);
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.92rem;
+    margin-bottom: 1rem;
+    transition: opacity 0.4s ease;
+    min-height: 1.4em;
+  }
+  .bnc-loading-overlay-stage.fading { opacity: 0.2; }
+  .bnc-loading-overlay-elapsed {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0 auto 1rem;
+    padding: 0.35rem 0.85rem;
+    background: var(--gold-soft);
+    color: var(--navy);
+    border: 1px solid rgba(203,161,53,0.3);
+    border-radius: 999px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+  .bnc-loading-overlay-elapsed-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--gold);
+    border-radius: 50%;
+    animation: bncPulseDot 1.4s ease-in-out infinite;
+  }
+  .bnc-loading-overlay-warning {
+    margin-top: 0.85rem;
+    padding: 0.55rem 0.9rem;
+    background: rgba(203,161,53,0.06);
+    border-left: 3px solid var(--gold);
+    border-radius: 4px;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.78rem;
+    color: var(--charcoal);
+    text-align: left;
+  }
+  .bnc-loading-overlay-warning strong {
+    color: var(--navy);
+  }
+
   /* No-issues happy state */
   .bnc-pf-clean {
     text-align: center;
@@ -4312,22 +4401,26 @@
       toastWarn(`This PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB. The Pre-Check supports PDFs up to 8 MB. For larger pro formas, split the document or contact support.`, 'PDF too large');
       return;
     }
-    // Show the loading panel IMMEDIATELY - before we even start reading the
-    // file - so the user always sees a "we're working on it" indicator.
-    // Without this, base64 conversion of larger PDFs creates 1-3 seconds of
-    // dead air where nothing happens visually.
-    pfOutput.innerHTML = `
-      <div class="bnc-pf-loading">
-        <div class="bnc-pf-loading-spinner"></div>
-        <div class="bnc-pf-loading-title">Loading your pro forma...</div>
-        <div class="bnc-pf-loading-stage">Reading the file from your computer...</div>
-        <div class="bnc-pf-loading-note">This usually takes just a moment.</div>
-      </div>
-    `;
-    setTimeout(() => {
-      const loadingEl = pfOutput.querySelector('.bnc-pf-loading');
-      if (loadingEl) loadingEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
+    // Show the GUARANTEED-VISIBLE fixed-position overlay spinner. It's anchored
+    // to the viewport center and lives outside the page flow, so it appears
+    // regardless of where pfOutput is or whether scrollIntoView fires.
+    // The overlay persists through base64 conversion AND extraction, with
+    // rotating stages that update the user on what's happening.
+    const overlay = showLoadingOverlay({
+      title: 'Reading your pro forma...',
+      stages: [
+        'Reading the file from your computer...',
+        'Sending the document to the AI...',
+        'AI is reading the document and identifying time entries...',
+        'Identifying time entries and matters...',
+        'Extracting timekeepers and codes...',
+        'Grouping entries by matter...',
+        'Almost done - finalizing matter list...'
+      ],
+      warning: 'Please don\'t refresh the page - the AI is reading your pro forma. Larger PDFs take 30-60 seconds.'
+    });
+    // Stash the overlay handle so pfExtractEntries can stop it when Step 2 appears
+    proFormaState._activeOverlay = overlay;
 
     try {
       const b64 = await toBase64(file);
@@ -4337,14 +4430,96 @@
       pfUploadPrompt.style.display = 'none';
       pfUploadLoaded.style.display = '';
       pfUploadZone.classList.add('has-file');
-      // Kick off extraction (this replaces the loading UI we just rendered
-      // with the richer rotating-stages version that includes the elapsed counter)
+      // Kick off extraction. The overlay stays visible through the entire
+      // extraction call - pfExtractEntries calls overlay.stop() when Step 2 renders.
       pfExtractEntries();
     } catch (err) {
       console.error('PF file read error:', err);
+      if (overlay) overlay.stop();
+      proFormaState._activeOverlay = null;
       toastError("Couldn't read that PDF. Try a different file.");
       pfResetAll();
     }
+  }
+
+  // showLoadingOverlay: renders a fixed-position spinner overlay anchored to
+  // the viewport center. GUARANTEED to appear in the user's view because it's
+  // positioned absolutely outside the page flow - doesn't depend on
+  // scrollIntoView or where any container element lives.
+  //
+  // Used as the IMMEDIATE visual feedback when a user uploads a PDF (Phase 0,
+  // before extraction even starts). The richer in-flow loading panel from
+  // startExtractionLoadingUI takes over once extraction begins.
+  //
+  // Returns an object with:
+  //   - update(stage): change the stage message
+  //   - stop(): remove the overlay from the page (idempotent)
+  function showLoadingOverlay(opts) {
+    // Remove any existing overlay first so two uploads in quick succession
+    // don't stack
+    const existing = document.querySelector('.bnc-loading-overlay');
+    if (existing) existing.remove();
+
+    const stages = opts.stages || ['Working on it...'];
+    const overlay = document.createElement('div');
+    overlay.className = 'bnc-loading-overlay';
+    overlay.innerHTML = `
+      <div class="bnc-loading-overlay-card">
+        <div class="bnc-loading-overlay-spinner"></div>
+        <div class="bnc-loading-overlay-title">${escapeHtml(opts.title || 'Working on it...')}</div>
+        <div class="bnc-loading-overlay-elapsed">
+          <span class="bnc-loading-overlay-elapsed-dot"></span>
+          <span data-overlay-elapsed>Working for 0 seconds</span>
+        </div>
+        <div class="bnc-loading-overlay-stage" data-overlay-stage>${escapeHtml(stages[0] || '')}</div>
+        ${opts.warning ? `<div class="bnc-loading-overlay-warning"><strong>Heads up:</strong> ${escapeHtml(opts.warning)}</div>` : ''}
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Elapsed seconds counter
+    const startTime = Date.now();
+    const elapsedInterval = setInterval(() => {
+      const el = overlay.querySelector('[data-overlay-elapsed]');
+      if (!el) return;
+      const secs = Math.floor((Date.now() - startTime) / 1000);
+      el.textContent = `Working for ${secs} second${secs === 1 ? '' : 's'}`;
+    }, 1000);
+
+    // Rotating stages with fade transition
+    let stageIdx = 0;
+    const stageInterval = setInterval(() => {
+      const stageEl = overlay.querySelector('[data-overlay-stage]');
+      if (!stageEl) return;
+      stageEl.classList.add('fading');
+      setTimeout(() => {
+        const inner = overlay.querySelector('[data-overlay-stage]');
+        if (!inner) return;
+        stageIdx = (stageIdx + 1) % stages.length;
+        inner.textContent = stages[stageIdx];
+        inner.classList.remove('fading');
+      }, 400);
+    }, 5000);
+
+    let stopped = false;
+    return {
+      update(stage) {
+        const stageEl = overlay.querySelector('[data-overlay-stage]');
+        if (stageEl) stageEl.textContent = stage;
+      },
+      stop() {
+        if (stopped) return;
+        stopped = true;
+        clearInterval(elapsedInterval);
+        clearInterval(stageInterval);
+        // Fade-out animation, then remove
+        overlay.style.transition = 'opacity 0.25s ease-out';
+        overlay.style.opacity = '0';
+        setTimeout(() => {
+          if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }, 260);
+      }
+    };
   }
 
   // startExtractionLoadingUI: spins up the rich "we're working on it" loading UI
@@ -4431,21 +4606,20 @@
     // Toast lets the user know what's happening even if they look away from the page
     toastInfo('Reading your pro forma - this takes about 20-40 seconds.', 'Working on it');
 
-    const loadingUI = startExtractionLoadingUI(pfOutput, {
-      title: 'Reading your pro forma...',
-      stages: [
-        'Reading your pro forma...',
-        'Identifying time entries and matters...',
-        'Extracting timekeepers and codes...',
-        'Grouping entries by matter...',
-        'Almost done - finalizing matter list...'
-      ],
-      note: 'This typically takes 20-40 seconds. Feel free to step away.',
-      refreshWarning: 'Please don\'t refresh the page - the AI is reading your pro forma. Larger PDFs take 30-60 seconds.'
-    });
-    // For backward-compat with the existing finally block, expose a stop handle
-    // under the same variable name that was used before
-    const extractStageInterval = { stop: () => loadingUI.stop() };
+    // The overlay was started in pfHandleFile and persists through extraction.
+    // We DON'T render an in-flow loading panel here anymore - the overlay
+    // handles all the "we're working on it" UX.
+    //
+    // extractStageInterval.stop() is called from multiple paths below
+    // (success, retry, error). Each call must dismiss the overlay too.
+    const extractStageInterval = {
+      stop: () => {
+        if (proFormaState._activeOverlay) {
+          proFormaState._activeOverlay.stop();
+          proFormaState._activeOverlay = null;
+        }
+      }
+    };
 
     const extractPrompt = `Your ONLY job in this response is to return a single JSON object. Do not include any preamble, explanation, commentary, or markdown formatting. Do not say "Here is the JSON" or "I'll extract the entries." Your entire response must start with the character { and end with the character }. Nothing before. Nothing after.
 
@@ -4506,11 +4680,15 @@ If the PDF doesn't appear to be a pro forma at all, return:
         data = parseJsonResilient(text);
       } catch (firstErr) {
         // Initial parse failed - retry once with a stronger JSON-only reminder.
-        // Stop the cycling stage messages so the retry message stays visible.
+        // Stop the cycling stage messages, then spin up a fresh overlay
+        // with retry-specific copy so the user sees the retry happening.
         extractStageInterval.stop();
         console.warn('PF extract: initial parse failed, retrying. Error:', firstErr.message);
-        const stageEl = pfOutput.querySelector('[data-loading-stage]');
-        if (stageEl) stageEl.textContent = 'Cleaning up the response and retrying...';
+        proFormaState._activeOverlay = showLoadingOverlay({
+          title: 'Cleaning up the response and retrying...',
+          stages: ['Cleaning up the response and retrying...'],
+          warning: 'The first attempt to parse the AI response failed. Trying again with a stricter prompt.'
+        });
 
         const retryPrompt = extractPrompt + `\n\nIMPORTANT: Your previous response could not be parsed as JSON. Common mistakes to avoid:
 - Do NOT include any text before the opening { or after the closing }
@@ -5536,20 +5714,22 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
       toastWarn(`This PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB. Month-End Pre-Check supports PDFs up to 12 MB. For larger files, split by matter or contact support.`, 'PDF too large');
       return;
     }
-    // Show the loading panel IMMEDIATELY so users never see a frozen page
-    // during base64 conversion of larger monthly exports.
-    meOutput.innerHTML = `
-      <div class="bnc-pf-loading">
-        <div class="bnc-pf-loading-spinner"></div>
-        <div class="bnc-pf-loading-title">Loading your monthly export...</div>
-        <div class="bnc-pf-loading-stage">Reading the file from your computer...</div>
-        <div class="bnc-pf-loading-note">This usually takes just a moment.</div>
-      </div>
-    `;
-    setTimeout(() => {
-      const loadingEl = meOutput.querySelector('.bnc-pf-loading');
-      if (loadingEl) loadingEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 100);
+    // Show the GUARANTEED-VISIBLE fixed-position overlay spinner. Lives outside
+    // the page flow so it always appears in the viewport center.
+    const overlay = showLoadingOverlay({
+      title: 'Reading your monthly time export...',
+      stages: [
+        'Reading the file from your computer...',
+        'Sending the document to the AI...',
+        'AI is reading the document and identifying matters...',
+        'Identifying entries across all matters...',
+        'Grouping entries by matter (this is the slowest step for large months)...',
+        'Identifying timekeepers and codes...',
+        'Almost done - finalizing matter list...'
+      ],
+      warning: 'Please don\'t refresh the page - the AI is reading your monthly export. Larger PDFs take 30-90 seconds.'
+    });
+    monthEndState._activeOverlay = overlay;
 
     try {
       const b64 = await toBase64(file);
@@ -5562,6 +5742,8 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
       meExtractEntries();
     } catch (err) {
       console.error('ME file read error:', err);
+      if (overlay) overlay.stop();
+      monthEndState._activeOverlay = null;
       toastError("Couldn't read that PDF. Try a different file.");
       meResetAll();
     }
@@ -5573,19 +5755,15 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
   async function meExtractEntries() {
     toastInfo('Reading your monthly time export - this takes 30-60 seconds depending on size.', 'Working on it');
 
-    const loadingUI = startExtractionLoadingUI(meOutput, {
-      title: 'Reading your monthly time export...',
-      stages: [
-        'Reading your monthly time export...',
-        'Identifying entries across all matters...',
-        'Grouping entries by matter (this is the slowest step for large months)...',
-        'Identifying timekeepers and codes...',
-        'Almost done - finalizing matter list...'
-      ],
-      note: 'Larger monthly exports take 30-90 seconds. The parallel review afterward is fast.',
-      refreshWarning: 'Please don\'t refresh the page - the AI is reading your monthly export. Larger PDFs take 30-90 seconds.'
-    });
-    const extractStageInterval = { stop: () => loadingUI.stop() };
+    // The overlay was started in meHandleFile and persists through extraction.
+    const extractStageInterval = {
+      stop: () => {
+        if (monthEndState._activeOverlay) {
+          monthEndState._activeOverlay.stop();
+          monthEndState._activeOverlay = null;
+        }
+      }
+    };
 
     const extractPrompt = `Your ONLY job in this response is to return a single JSON object. Do not include any preamble, explanation, commentary, or markdown formatting. Your entire response must start with the character { and end with the character }.
 
@@ -5638,8 +5816,11 @@ JSON FORMATTING (non-negotiable):
       } catch (firstErr) {
         extractStageInterval.stop();
         console.warn('ME extract: initial parse failed, retrying. Error:', firstErr.message);
-        const stageEl = meOutput.querySelector('[data-loading-stage]');
-        if (stageEl) stageEl.textContent = 'Cleaning up the response and retrying...';
+        monthEndState._activeOverlay = showLoadingOverlay({
+          title: 'Cleaning up the response and retrying...',
+          stages: ['Cleaning up the response and retrying...'],
+          warning: 'The first attempt to parse the AI response failed. Trying again with a stricter prompt.'
+        });
 
         const retryPrompt = extractPrompt + `\n\nIMPORTANT: Your previous response could not be parsed as JSON. Common mistakes:\n- Do NOT include any text before { or after }\n- Do NOT use markdown fences\n- Use only straight ASCII quotes`;
         const r2 = await fetch('/api/generate', {
