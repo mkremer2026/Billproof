@@ -179,4 +179,96 @@ module.exports = async function handler(req, res) {
 
   for (const msg of messages) {
     if (!msg || typeof msg !== 'object') {
-      return res.status(400).json({ error: 'Eac
+      return res.status(400).json({ error: 'Each message must be an object.' });
+    }
+    if (msg.role !== 'user' && msg.role !== 'assistant') {
+      return res.status(400).json({ error: 'Message role must be "user" or "assistant".' });
+    }
+    if (msg.content === undefined || msg.content === null) {
+      return res.status(400).json({ error: 'Message content is required.' });
+    }
+  }
+
+  const bodyBytes = Buffer.byteLength(JSON.stringify(body));
+  if (bodyBytes > CONFIG.maxBodyBytes) {
+    return res.status(413).json({
+      error: `Request too large (${Math.round(bodyBytes / 1024)}KB). Maximum is ${Math.round(CONFIG.maxBodyBytes / 1024 / 1024)}MB.`,
+    });
+  }
+
+  // Resolve any Blob URLs into inline base64 BEFORE forwarding to Anthropic.
+  // We collect the URLs so we can delete them in the finally block, regardless
+  // of whether the Anthropic call succeeds or fails.
+  let blobUrlsToCleanup = [];
+  try {
+    blobUrlsToCleanup = await resolveBlobUrls(messages);
+  } catch (resolveErr) {
+    console.error('Blob resolve error:', resolveErr);
+    return res.status(400).json({ error: 'Could not load uploaded PDF. Please try uploading again.' });
+  }
+
+  try {
+    const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: CONFIG.model,
+        max_tokens: CONFIG.maxTokens,
+        messages,
+      }),
+    });
+
+    const responseText = await anthropicResponse.text();
+
+    if (!anthropicResponse.ok) {
+      console.error('Anthropic API error:', anthropicResponse.status, responseText);
+      return res.status(anthropicResponse.status >= 500 ? 502 : 400).json({
+        error:
+          anthropicResponse.status === 401
+            ? 'AI service rejected the API key. Check that ANTHROPIC_API_KEY is set correctly.'
+            : anthropicResponse.status === 429
+            ? 'AI service is currently rate-limited. Please try again in a moment.'
+            : 'The AI service returned an error. Please try again.',
+      });
+    }
+
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).send(responseText);
+  } catch (err) {
+    console.error('Handler error:', err);
+    return res.status(500).json({
+      error: 'Internal server error. Please try again in a moment.',
+    });
+  } finally {
+    // Fire-and-forget cleanup of blob URLs after Anthropic call finishes.
+    // Dynamic import of @vercel/blob to avoid CommonJS/ESM compatibility issues.
+    // Loading at function-call time (not module load time) means an import error
+    // here can't take down the whole endpoint - it just skips the cleanup.
+    if (blobUrlsToCleanup.length > 0) {
+      import('@vercel/blob')
+        .then(({ del }) => {
+          return Promise.all(
+            blobUrlsToCleanup.map(url =>
+              del(url).catch(e => console.warn('Blob cleanup failed:', url, e.message))
+            )
+          );
+        })
+        .catch(importErr => {
+          console.warn('Blob cleanup module load failed:', importErr.message);
+        });
+    }
+  }
+};
+
+module.exports.config = {
+  maxDuration: 300,
+  api: {
+    bodyParser: {
+      sizeLimit: '8mb',
+    },
+  },
+};
