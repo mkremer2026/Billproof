@@ -5272,7 +5272,16 @@ Tone: coaching, not punitive. The goal is to help the timekeeper get paid for wo
         pdfFileName: proFormaState.pdfFile.name
       });
 
-      toastSuccess(`Pre-Check complete: ${data.summary.total_findings} finding${data.summary.total_findings === 1 ? '' : 's'} across ${data.summary.total_entries} entries.`, 'Done');
+      if (data._salvaged) {
+        // The response was truncated by the AI's output cap. We salvaged all complete
+        // findings before the cutoff, but trailing findings are missing. Tell the user.
+        toastWarn(
+          `The Pre-Check returned ${(data.findings || []).length} complete findings before the response was cut short. For a complete review, try splitting this pro forma in half or running Month-End Pre-Check (which processes matters in parallel).`,
+          'Partial report'
+        );
+      } else {
+        toastSuccess(`Pre-Check complete: ${data.summary.total_findings} finding${data.summary.total_findings === 1 ? '' : 's'} across ${data.summary.total_entries} entries.`, 'Done');
+      }
     } catch (err) {
       clearInterval(stageInterval);
       console.error('PF review error:', err);
@@ -9355,12 +9364,17 @@ Return your response as JSON only, no preamble or code fences:
     try { return JSON.parse(normalized); } catch (e3) { attemptErrors.push({ strategy: '3-normalized', err: e3.message }); }
 
     // Strategy 4: try to surgically repair by truncating at the last complete entry
-    // For arrays where one entry is malformed, sometimes we can salvage prior entries
+    // For arrays where one entry is malformed OR the response was cut off mid-stream
+    // by the model hitting its output token cap, sometimes we can salvage all the
+    // complete entries before the cutoff and discard the partial last one.
     try {
       const repaired = attemptArrayTruncation(normalized);
       if (repaired) {
         const result = JSON.parse(repaired);
         console.warn('parseJsonResilient: salvaged via array truncation - some trailing entries may be missing');
+        // Mark the result so callers can surface a "partial report" warning to the user.
+        // The renderers check for this flag and toast accordingly.
+        if (result && typeof result === 'object') result._salvaged = true;
         return result;
       }
     } catch (e4) { attemptErrors.push({ strategy: '4-truncation', err: e4.message }); }
@@ -9554,21 +9568,30 @@ Return your response as JSON only, no preamble or code fences:
   // try truncating at the last complete element. Only safe for the multi/bulk shapes
   // where partial results are still useful.
   function attemptArrayTruncation(jsonText) {
-    // Find arrays "narratives": [...] or "entries": [...]
-    const arrayKeys = ['narratives', 'entries'];
+    // Find arrays "narratives": [...] or "entries": [...] or "findings": [...]
+    // - 'narratives' = standard multi-task / bulk generator output
+    // - 'entries'    = quick-capture and PDF extraction output
+    // - 'findings'   = Pre-Check report output (Pro Forma + Month-End)
+    // When a long Pre-Check response gets truncated by the model's output token
+    // cap, this salvager keeps every complete finding before the cutoff and
+    // discards the partial last one, so the user gets a usable partial report
+    // instead of a hard failure.
+    const arrayKeys = ['narratives', 'entries', 'findings'];
     for (const key of arrayKeys) {
       const arrayStart = jsonText.indexOf(`"${key}"`);
       if (arrayStart === -1) continue;
       const bracketStart = jsonText.indexOf('[', arrayStart);
       if (bracketStart === -1) continue;
 
-      // Walk forward, tracking brace depth, and find the last point where we
-      // had a complete object inside the array
+      // Walk forward from the array bracket, tracking brace depth INSIDE the array.
+      // We start AFTER the `[` so depth starts at 0 and goes to 1 when we enter
+      // the first entry's `{`. When that `{` closes, depth returns to 0 - that's
+      // the end of a complete entry.
       let depth = 0;
       let inString = false;
       let escapeNext = false;
       let lastCompleteEntryEnd = -1;
-      for (let i = bracketStart; i < jsonText.length; i++) {
+      for (let i = bracketStart + 1; i < jsonText.length; i++) {
         const c = jsonText[i];
         if (escapeNext) { escapeNext = false; continue; }
         if (c === '\\') { escapeNext = true; continue; }
@@ -9577,7 +9600,7 @@ Return your response as JSON only, no preamble or code fences:
         if (c === '{') depth++;
         else if (c === '}') {
           depth--;
-          if (depth === 1) lastCompleteEntryEnd = i; // end of an array element
+          if (depth === 0) lastCompleteEntryEnd = i; // end of an array element
         }
         else if (c === ']' && depth === 0) break;
       }
